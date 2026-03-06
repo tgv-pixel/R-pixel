@@ -24,7 +24,7 @@ PAYMENT_AMOUNT = int(os.environ.get('PAYMENT_AMOUNT', 500))
 DB_PATH = '/tmp/dating_bot.db' if os.environ.get('RENDER') else 'dating_bot.db'
 
 # ==================== LOGGING ====================
-logging.basic8Config(
+logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
