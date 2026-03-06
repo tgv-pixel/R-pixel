@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# server.py - Complete Telegram Dating Bot for Render.com
+# app.py - Complete Telegram Dating Bot for Render.com
 
 import logging
 import os
@@ -87,6 +87,7 @@ TRANSLATIONS = {
         'matching': '🔍 ተመሳሳይ ፍላጎት ያላቸውን እየፈለግን ነው...',
         'no_match': '😔 በአሁኑ ሰዓት የሚመጥን አልተገኘም። እባክዎ ቆየት ብለው ይሞክሩ።',
         'invalid_phone': '❌ የተሳሳተ ስልክ ቁጥር ነው። እባክዎ እንደገና ይሞክሩ:',
+        'back': '◀️ ተመለስ',
     },
     'en': {
         'welcome': '👋 Welcome to the Dating Bot!\nPlease choose your language:',
@@ -108,6 +109,7 @@ TRANSLATIONS = {
         'matching': '🔍 Looking for matches with similar interests...',
         'no_match': '😔 No matches found at the moment. Please try again later.',
         'invalid_phone': '❌ Invalid phone number. Please try again:',
+        'back': '◀️ Back',
     }
 }
 
@@ -149,10 +151,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     data = query.data
-    
-    # Initialize user data if needed
-    if 'language' not in context.user_data:
-        context.user_data['language'] = 'en'
+    lang = context.user_data.get('language', 'en')
     
     # Handle language selection
     if data.startswith('lang_'):
@@ -173,12 +172,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(TRANSLATIONS[lang]['language_selected'])
         await show_main_menu(update, context)
     
+    # Handle back buttons
+    elif data == 'back_to_main':
+        await show_main_menu(update, context)
+    
+    elif data == 'back_to_services':
+        await show_service_options(update, context)
+    
+    elif data == 'back_to_payment':
+        service = context.user_data.get('selected_service', 'online')
+        await show_payment_options(update, context, service)
+    
     # Handle main menu
     elif data == 'find_partner':
         await show_service_options(update, context)
     
     elif data in ['online', 'in_person', 'short_night', 'full_night']:
-        lang = context.user_data.get('language', 'en')
         context.user_data['selected_service'] = data
         
         # Check if user has paid
@@ -205,7 +214,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_payment_instructions(update, context, data)
     
     elif data == 'verify_payment':
-        lang = context.user_data.get('language', 'en')
         await query.edit_message_text(TRANSLATIONS[lang]['enter_phone'])
         context.user_data['awaiting_phone'] = True
 
@@ -234,7 +242,6 @@ async def show_service_options(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton(TRANSLATIONS[lang]['in_person'], callback_data='in_person')],
         [InlineKeyboardButton(TRANSLATIONS[lang]['short_night'], callback_data='short_night')],
         [InlineKeyboardButton(TRANSLATIONS[lang]['full_night'], callback_data='full_night')],
-        [InlineKeyboardButton("◀️ Back", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -251,7 +258,6 @@ async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard = [
         [InlineKeyboardButton(TRANSLATIONS[lang]['cbe'], callback_data='pay_cbe')],
         [InlineKeyboardButton(TRANSLATIONS[lang]['tele_birr'], callback_data='pay_tele')],
-        [InlineKeyboardButton("◀️ Back", callback_data='back_to_services')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -272,7 +278,6 @@ async def show_payment_instructions(update: Update, context: ContextTypes.DEFAUL
     
     keyboard = [
         [InlineKeyboardButton(TRANSLATIONS[lang]['verify_payment'], callback_data='verify_payment')],
-        [InlineKeyboardButton("◀️ Back", callback_data='back_to_payment')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -395,14 +400,17 @@ def main():
         
         logger.info(f"Starting webhook on port {port}")
         if webhook_url:
+            # This method handles the event loop correctly
             application.run_webhook(
                 listen="0.0.0.0",
                 port=port,
                 webhook_url=webhook_url,
-                secret_token=None
+                secret_token=None,
+                webhook_url_path="/webhook"
             )
         else:
             logger.warning("WEBHOOK_URL not set, falling back to polling")
+            # This also handles the event loop correctly
             application.run_polling()
     else:
         # Use polling locally
