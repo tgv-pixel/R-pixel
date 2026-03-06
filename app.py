@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Get bot token from environment variable
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
-    BOT_TOKEN = "7294379764:AAEnjI8VE3Frw2__C5D0uzGc4sLzteehqS0"  # Fallback (but set in Render)
+    BOT_TOKEN = "7294379764:AAEnjI8VE3Frw2__C5D0uzGc4sLzteehqS0"
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -134,7 +134,6 @@ def button_handler(update, context):
     query.answer()
     
     data = query.data
-    user_id = query.from_user.id
     
     # Initialize user data
     if 'language' not in context.user_data:
