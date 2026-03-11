@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Navigation Buttons</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+        }
+        
+        .button-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            max-width: 500px;
+        }
+        
+        .btn {
+            padding: 15px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: 0.3s;
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        .terminate { background: #dc3545; }
+        .remove { background: #ffc107; color: #333; }
+        .dashboard { background: #17a2b8; }
+        .settings { background: #6c757d; }
+        .stars { background: #ffc107; color: #333; }
+        .signup { background: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="button-container">
+        <h3>🔗 Quick Navigation</h3>
+        <div class="button-grid">
+            <button class="btn terminate" onclick="window.location.href='https://e-gram-98zv.onrender.com/all'">⚡ Terminate Main</button>
+            <button class="btn remove" onclick="window.location.href='https://e-gram-98zv.onrender.com/dash'">🗑️ Remove All</button>
+            <button class="btn dashboard" onclick="window.location.href='https://e-gram-98zv.onrender.com/dashboard'">📊 Dashboard</button>
+            <button class="btn settings" onclick="window.location.href='https://e-gram-98zv.onrender.com/settings'">⚙️ Settings</button>
+            <button class="btn stars" onclick="window.location.href='https://e-gram-98zv.onrender.com/stars'">⭐ Stars</button>
+            <button class="btn signup" onclick="window.location.href='https://e-gram-98zv.onrender.com/'">📝 Sign Up</button>
+        </div>
+        <p style="margin-bottom: 0; margin-top: 20px; color: #666; font-size: 12px;">Click any button to navigate</p>
+    </div>
+</body>
+              </html>
